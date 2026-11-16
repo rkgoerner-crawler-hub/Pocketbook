@@ -182,7 +182,7 @@ function renderTabs() {
 }
 
 /* ---------- welcome ---------- */
-const BOFA_STEPS = '<ol class="steps"><li>Go to <b>bankofamerica.com</b> in a web browser and sign in.</li><li>Tap the account you want, such as checking.</li><li>Above the list of transactions, tap <b>Download</b>.</li><li>Pick the dates you want. For <b>File type</b>, choose <b>Microsoft Excel Format</b>.</li><li>Tap <b>Download Transactions</b>. The file is saved to your Downloads.</li><li>Come back here, tap <b>Import a bank statement</b> and choose that file.</li></ol>';
+const BOFA_STEPS = '<ol class="steps"><li>Go to <b>bankofamerica.com</b> in a web browser and sign in.</li><li>Tap the account you want, such as checking.</li><li>Above the list of transactions, tap <b>Download</b>.</li><li>Pick the dates. To start, choose the last <b>6 months</b>. If it only lets you pick one statement period at a time, download each month separately. For <b>File type</b>, choose <b>Microsoft Excel Format</b>.</li><li>Tap <b>Download Transactions</b>. The file is saved to your Downloads.</li><li>Come back here, tap <b>Import a bank statement</b> and choose the file, or all of the files at once.</li></ol>';
 function viewWelcome() {
   return banners() + '<div class="empty"><svg class="welcome-mark" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#fff"/><rect x="6.5" y="11" width="21" height="15.5" rx="3.5" fill="#e8654a"/><path d="M6.5 15.5c0-2.5 1.6-4.5 4-4.5h13c2.4 0 4 2 4 4.5v1.5h-21z" fill="#c94e35"/><path d="M11 11c0-2.8 2.7-5 6-5s6 2.2 6 5" fill="none" stroke="#0b5e5b" stroke-width="2.2" stroke-linecap="round"/><circle cx="17" cy="17.2" r="2.4" fill="#fff"/><circle cx="17" cy="17.2" r="1.1" fill="#0b5e5b"/></svg><h1>Welcome to Pocketbook</h1>' +
     '<p class="hint">Add bank statements and this page sorts spending, tracks a monthly budget, finds charges worth cutting and plans debt payoff.</p>' +
@@ -428,7 +428,7 @@ function sheetTxn(sh) {
   const opt = (arr, g) => '<optgroup label="' + g + '">' + arr.map(c => '<option' + (c === t.cat ? ' selected' : '') + '>' + esc(c) + '</option>').join('') + '</optgroup>';
   return '<div><div style="font-weight:700;overflow-wrap:anywhere">' + esc(t.m) + '</div><div class="small">' + esc(dLabel(t.d)) + (acc ? ' · ' + esc(acc.name) : '') + '</div><div class="num" style="font-size:1.8rem;font-weight:700;margin-top:4px">' + (t.a > 0 ? '+' : '') + esc(money2(t.a)) + '</div></div>' +
     '<label class="f">Category<select id="t-cat">' + opt(C.EXPENSE, 'Spending') + opt(C.INCOME, 'Income') + opt([C.TRANSFER], 'Not counted') + '</select></label>' +
-    (same > 1 ? '<label class="check"><input type="checkbox" id="t-all" checked><span>Use this category for all ' + same + ' “' + esc(C.titleCase(t.key)) + '” transactions, including future imports</span></label>' : '<label class="check"><input type="checkbox" id="t-all"><span>Remember this category for future “' + esc(C.titleCase(t.key)) + '” transactions</span></label>') +
+    (same > 1 ? '<label class="check"><input type="checkbox" id="t-all" checked><span>Use this category for all ' + same + ' “' + esc(C.keyLabel(t.key)) + '” transactions, including future imports</span></label>' : '<label class="check"><input type="checkbox" id="t-all"><span>Remember this category for future “' + esc(C.keyLabel(t.key)) + '” transactions</span></label>') +
     '<button class="btn primary block" data-a="saveTxn" data-id="' + esc(t.i) + '" data-mo="' + t.month + '"' + (S.canWrite ? '' : ' disabled') + '>Save</button>' +
     '<button class="btn danger block" data-a="delTxn" data-id="' + esc(t.i) + '" data-mo="' + t.month + '"' + (S.canWrite ? '' : ' disabled') + '>' + (S.confirm === 'del' + t.i ? 'Tap again to delete' : 'Delete this transaction') + '</button>';
 }
@@ -539,71 +539,103 @@ function loadBackupFile(file) {
 function startImport() {
   if (S.demo) { toast('Leave the sample data first, then import real statements.'); return; }
   const list = S.settings.accounts.list;
-  S.imp = { step: 1, acct: list.length ? list[0].id : 'new', newName: 'Bank of America checking', newType: 'checking', flip: false, flipTouched: false, newId: uid('a') };
+  S.imp = { step: 1, acct: list.length ? list[0].id : 'new', newName: 'Bank of America checking', newType: 'checking', invert: false, newId: uid('a'), files: [] };
   openSheet('import');
 }
+const PICK_HELP = '<p class="small">You can choose several files at once, for example one for each month. On Android, press and hold the first file, then tap the others.</p>';
 function sheetImport() {
   const m = S.imp, list = S.settings.accounts.list;
-  if (m.step === 3) return '<div class="card stack"><h3 style="font-size:1.1rem">Done</h3><p>Added <b>' + m.added + '</b> new transactions' + (m.dupes ? ' and skipped ' + m.dupes + ' that were already here' : '') + '.</p></div><button class="btn primary block" data-a="importDone">Show my budget</button><button class="btn block" data-a="importAnother">Import another file</button>';
+  if (m.step === 3) return '<div class="card stack"><h3 style="font-size:1.1rem">Done</h3><p>Added <b>' + m.added + '</b> new transactions' + (m.dupes ? ' and skipped ' + m.dupes + ' that were already here' : '') + '.</p>' + (m.monthsCovered ? '<p class="small">Covers ' + esc(m.monthsCovered) + '.</p>' : '') + '</div>' +
+    (m.suggest ? '<div class="banner info"><span>With several months in, the Budget tab can now suggest monthly limits from her real spending.</span></div>' : '') +
+    '<button class="btn primary block" data-a="importDone">Show my budget</button><button class="btn block" data-a="importAnother">Import more files</button>';
   if (m.step === 4) return '<p class="hint">Saving month ' + m.progress + ' of ' + m.total + '…</p>';
-  const acctSel = '<label class="f">Which account is this file from?<select id="imp-acct">' + list.map(a => '<option value="' + esc(a.id) + '"' + (m.acct === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '<option value="new"' + (m.acct === 'new' ? ' selected' : '') + '>A new account…</option></select></label>' +
-    (m.acct === 'new' ? '<div class="grid2"><label class="f">Name<input type="text" id="imp-name" value="' + esc(m.newName) + '"></label><label class="f">Type<select id="imp-type"><option value="checking"' + (m.newType === 'checking' ? ' selected' : '') + '>Checking or savings</option><option value="credit"' + (m.newType === 'credit' ? ' selected' : '') + '>Credit card</option></select></label></div>' : '');
-  const pick = '<label class="f">Statement file (CSV)<input type="file" id="imp-file" accept=".csv,.txt,text/csv,text/plain"></label>';
-  if (!m.rows) return acctSel + pick + (m.error ? '<div class="banner warn" role="alert">' + esc(m.error) + '</div>' : '') + '<p class="small">Pick the file you downloaded from the bank. It is read in this page and not sent anywhere else.</p>' +
-    '<details class="map"><summary>How do I get this file from Bank of America?</summary>' + BOFA_STEPS + '</details>';
-  const b = m.built, txns = b.txns, ins = txns.filter(t => t.a > 0), outs = txns.filter(t => t.a < 0);
+  if (m.step === 5) return '<p class="hint">Reading ' + m.reading + (m.reading === 1 ? ' file' : ' files') + '…</p>';
+  const acctSel = '<label class="f">Which account are these from?<select id="imp-acct">' + list.map(a => '<option value="' + esc(a.id) + '"' + (m.acct === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '<option value="new"' + (m.acct === 'new' ? ' selected' : '') + '>A new account…</option></select></label>' +
+    (m.acct === 'new' ? '<div class="grid2"><label class="f">Name<input type="text" id="imp-name" value="' + esc(m.newName) + '"></label><label class="f">Type<select id="imp-type"><option value="checking"' + (m.newType === 'checking' ? ' selected' : '') + '>Checking or savings</option><option value="credit"' + (m.newType === 'credit' ? ' selected' : '') + '>Credit card</option></select></label></div>' : '') +
+    '<p class="small">Import each account separately: checking files together, credit card files together.</p>';
+  const pick = '<label class="f">Statement files (CSV)<input type="file" id="imp-file" multiple accept=".csv,.txt,text/csv,text/plain"></label>';
+  if (!m.files.length) return acctSel + pick + PICK_HELP + (m.error ? '<div class="banner warn" role="alert">' + esc(m.error) + '</div>' : '') + '<p class="small">The files are read on this device and not sent anywhere else.</p>' +
+    '<details class="map"><summary>How do I get these files from Bank of America?</summary>' + BOFA_STEPS + '</details>';
+  const txns = m.combined, ins = txns.filter(t => t.a > 0), outs = txns.filter(t => t.a < 0);
   const sum = a => a.reduce((x, t) => x + Math.abs(t.a), 0);
-  const dates = txns.map(t => t.d).sort(), mp = m.mapping, hdr = m.layout.header, cols = [];
-  const colSel = (id, label, cur, none) => '<label class="f">' + label + '<select id="' + id + '">' + (none ? '<option value="-1">None</option>' : '') + Array.from({ length: m.layout.ncol }, (_, i) => '<option value="' + i + '"' + (cur === i ? ' selected' : '') + '>' + esc(hdr && hdr[i] ? hdr[i] : 'Column ' + (i + 1)) + '</option>').join('') + '</select></label>';
-  const low = !txns.length || mp.date < 0 || mp.desc < 0;
-  const prev = txns.slice(0, 5).map(t => '<tr><td>' + esc(t.d) + '</td><td>' + esc(t.m) + '</td><td class="n num">' + esc(money2(t.a)) + '</td></tr>').join('');
-  return acctSel +
-    '<div class="card stack"><b>' + esc(m.fileName) + '</b>' + (txns.length ? '<div class="stat3"><div><span class="v">' + txns.length + '</span><span class="k">Transactions</span></div><div><span class="v num">' + esc(money(sum(outs))) + '</span><span class="k">Money out (' + outs.length + ')</span></div><div><span class="v num">' + esc(money(sum(ins))) + '</span><span class="k">Money in (' + ins.length + ')</span></div></div><p class="small">' + esc(dates[0]) + ' to ' + esc(dates[dates.length - 1]) + (b.skipped ? ' · ' + b.skipped + ' rows skipped (no date or amount)' : '') + '</p>' : '<p class="hint">No transactions found with these columns. Check the column choices below.</p>') + '</div>' +
-    (txns.length ? '<div class="banner info" style="align-items:center"><span>Paychecks and deposits should be money <b>in</b>. If this looks backwards, flip it.</span><button class="btn" data-a="flip" style="min-height:40px;padding:6px 12px">Flip</button></div><div class="preview"><table><thead><tr><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>' + prev + '</tbody></table></div>' : '') +
-    '<details class="map"' + (low ? ' open' : '') + '><summary>Check the columns</summary><div class="stack">' + colSel('map-date', 'Date', mp.date, true) + colSel('map-desc', 'Description', mp.desc, true) + colSel('map-amt', 'Amount (one column, negative for money out)', mp.amount, true) +
-    '<div class="grid2">' + colSel('map-deb', 'Money out column', mp.debit, true) + colSel('map-cred', 'Money in column', mp.credit, true) + '</div><p class="small">Use the last two only if the file has separate columns for money out and money in. Then set Amount to None.</p></div></details>' +
-    '<p class="small">Transactions already imported are skipped, so overlapping statements are safe.</p>' +
-    '<button class="btn primary block" data-a="runImport"' + (txns.length ? '' : ' disabled') + '>Import ' + txns.length + ' transactions</button>';
+  const dates = txns.map(t => t.d).sort(), months = Array.from(new Set(dates.map(x => x.slice(0, 7)))).sort();
+  const bad = m.files.filter(f => !f.built.txns.length), single = m.files.length === 1 ? m.files[0] : null;
+  let h = acctSel + '<div class="card stack">';
+  if (single) h += '<b>' + esc(single.name) + '</b>';
+  else h += '<b>' + m.files.length + ' files</b><div class="list">' + m.files.map(f => { const ds = f.built.txns.map(t => t.d).sort(); return '<div class="row-item" style="cursor:default;padding:8px 2px"><div class="l"><span class="t1" style="font-weight:600">' + esc(f.name) + '</span><span class="t2">' + (ds.length ? esc(dLabel(ds[0])) + ' to ' + esc(dLabel(ds[ds.length - 1])) : 'No transactions found') + '</span></div><div class="r num" style="font-weight:600">' + f.built.txns.length + '</div></div>'; }).join('') + '</div>';
+  if (txns.length) h += '<div class="stat3"><div><span class="v">' + txns.length + '</span><span class="k">Transactions</span></div><div><span class="v num">' + esc(money(sum(outs))) + '</span><span class="k">Money out</span></div><div><span class="v num">' + esc(money(sum(ins))) + '</span><span class="k">Money in</span></div></div>' +
+    '<p class="small">' + months.length + (months.length === 1 ? ' month' : ' months') + ': ' + esc(mLabel(months[0])) + (months.length > 1 ? ' to ' + esc(mLabel(months[months.length - 1])) : '') + (m.overlap ? ' · ' + m.overlap + ' repeated in more than one file, counted once' : '') + '</p>';
+  else h += '<p class="hint">No transactions found. Check the column choices below.</p>';
+  h += '</div>';
+  if (bad.length && !single) h += '<div class="banner warn" role="alert"><span>' + bad.length + (bad.length === 1 ? ' file' : ' files') + ' could not be read as a statement and will be left out: ' + esc(bad.map(f => f.name).join(', ')) + '. Import ' + (bad.length === 1 ? 'it' : 'them') + ' on ' + (bad.length === 1 ? 'its' : 'their') + ' own to check the columns.</span></div>';
+  if (txns.length) {
+    const prev = txns.slice().sort((x, y) => x.d < y.d ? 1 : -1).slice(0, 5).map(t => '<tr><td>' + esc(t.d) + '</td><td>' + esc(t.m) + '</td><td class="n num">' + esc(money2(t.a)) + '</td></tr>').join('');
+    h += '<div class="banner info" style="align-items:center"><span>Social Security, pensions and other deposits should be money <b>in</b>. If this looks backwards, flip it.</span><button class="btn" data-a="flip" style="min-height:40px;padding:6px 12px">Flip</button></div><div class="preview"><table><thead><tr><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>' + prev + '</tbody></table></div>';
+  }
+  if (single) {
+    const mp = single.mapping, hdr = single.layout.header;
+    const colSel = (id, label, cur) => '<label class="f">' + label + '<select id="' + id + '"><option value="-1">None</option>' + Array.from({ length: single.layout.ncol }, (_, i) => '<option value="' + i + '"' + (cur === i ? ' selected' : '') + '>' + esc(hdr && hdr[i] ? hdr[i] : 'Column ' + (i + 1)) + '</option>').join('') + '</select></label>';
+    const low = !txns.length || mp.date < 0 || mp.desc < 0;
+    h += '<details class="map"' + (low ? ' open' : '') + '><summary>Check the columns</summary><div class="stack">' + colSel('map-date', 'Date', mp.date) + colSel('map-desc', 'Description', mp.desc) + colSel('map-amt', 'Amount (one column, negative for money out)', mp.amount) +
+      '<div class="grid2">' + colSel('map-deb', 'Money out column', mp.debit) + colSel('map-cred', 'Money in column', mp.credit) + '</div><p class="small">Use the last two only if the file has separate columns for money out and money in. Then set Amount to None.</p></div></details>';
+  }
+  return h + '<p class="small">Transactions already imported are skipped, so overlapping files are safe.</p>' +
+    '<button class="btn primary block" data-a="runImport"' + (txns.length ? '' : ' disabled') + '>Import ' + txns.length + ' transactions</button>' +
+    '<button class="btn block" data-a="importAnother">Choose different files</button>';
+}
+/* Ids are per file (so two identical purchases on one day in one file both count), then files are merged by id (so overlapping files count once). */
+function mergeFiles(files, acctId) {
+  const out = [], seen = new Set(); let overlap = 0;
+  files.forEach(f => C.assignIds(f.built.txns, acctId).forEach(t => { if (seen.has(t.i)) { overlap++; return; } seen.add(t.i); out.push(t); }));
+  return { txns: out, overlap };
 }
 function rebuildImport() {
-  const m = S.imp; if (!m || !m.layout) return;
-  const split = m.mapping.amount < 0 && (m.mapping.debit >= 0 || m.mapping.credit >= 0);
-  let b = C.buildTransactions(m.layout.dataRows, m.mapping, false);
-  if (!m.flipTouched) m.flip = C.guessFlip(b.txns, split);
-  if (m.flip) b = C.buildTransactions(m.layout.dataRows, m.mapping, true);
-  m.built = b;
+  const m = S.imp; if (!m || !m.files.length) return;
+  m.files.forEach(f => {
+    const split = f.mapping.amount < 0 && (f.mapping.debit >= 0 || f.mapping.credit >= 0);
+    const raw = C.buildTransactions(f.layout.dataRows, f.mapping, false);
+    f.flip = C.guessFlip(raw.txns, split) !== m.invert;
+    f.built = f.flip ? C.buildTransactions(f.layout.dataRows, f.mapping, true) : raw;
+  });
+  const mg = mergeFiles(m.files, 'preview'); m.combined = mg.txns; m.overlap = mg.overlap;
 }
-function loadFile(file) {
-  const m = S.imp; if (!file) return;
-  const rd = new FileReader();
-  rd.onerror = () => { m.error = "Couldn't read that file."; renderSheet(); };
-  rd.onload = () => {
+function readText(file) { return new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(String(rd.result)); rd.onerror = () => rej(new Error('read')); rd.readAsText(file); }); }
+async function loadFiles(list) {
+  const m = S.imp; const files = Array.from(list || []); if (!files.length) return;
+  m.step = 5; m.reading = files.length; m.error = ''; renderSheet();
+  const out = [], failed = [];
+  for (const file of files.slice(0, 60)) {
     try {
-      const rows = C.parseCSV(String(rd.result));
-      if (rows.length < 2) throw new Error('That file looks empty.');
-      m.rows = rows; m.layout = C.detectLayout(rows); m.mapping = Object.assign({}, m.layout.mapping); m.fileName = file.name; m.flipTouched = false; m.error = '';
-      rebuildImport();
-    } catch (e) { m.error = e.message || "Couldn't read that file as a statement."; m.rows = null; }
-    renderSheet();
-  };
-  rd.readAsText(file);
+      const rows = C.parseCSV(await readText(file));
+      if (rows.length < 2) throw new Error('empty');
+      const layout = C.detectLayout(rows);
+      out.push({ name: file.name, layout, mapping: Object.assign({}, layout.mapping) });
+    } catch (e) { failed.push(file.name); }
+  }
+  m.step = 1; m.invert = false; m.files = out;
+  if (!out.length) m.error = failed.length > 1 ? "Couldn't read those files as bank statements. Make sure they are the CSV (Microsoft Excel Format) downloads." : "Couldn't read that file as a bank statement. Make sure it is the CSV (Microsoft Excel Format) download.";
+  else { out.sort((a, b) => a.name < b.name ? -1 : 1); rebuildImport(); if (failed.length) m.error = ''; }
+  m.failed = failed; renderSheet();
 }
 async function runImport() {
-  const m = S.imp; if (!m || !m.built || !S.canWrite) return;
+  const m = S.imp; if (!m || !m.combined || !m.combined.length || !S.canWrite) return;
   let acctId = m.acct;
   if (acctId === 'new') {
     acctId = m.newId; const name = (m.newName || '').trim() || 'Account';
     S.settings.accounts.list.push({ id: acctId, name, type: m.newType });
     putDoc('accounts');
   }
-  const fresh = C.assignIds(m.built.txns, acctId), have = new Set(D().items.map(t => t.i));
+  const fresh = mergeFiles(m.files, acctId).txns, have = new Set(D().items.map(t => t.i));
   const add = fresh.filter(t => !have.has(t.i));
   const by = {}; add.forEach(t => (by[t.d.slice(0, 7)] = by[t.d.slice(0, 7)] || []).push(t));
   const months = Object.keys(by).sort();
   m.step = 4; m.total = months.length; m.progress = 0; renderSheet();
   for (const mo of months) { m.progress++; renderSheet(); await writeMonth(mo, (S.tx[mo] || []).concat(by[mo])); }
-  m.step = 3; m.added = add.length; m.dupes = fresh.length - add.length; m.latest = months[months.length - 1];
-  bump(); renderSheet(); render();
+  const allMonths = Array.from(new Set(fresh.map(t => t.d.slice(0, 7)))).sort();
+  m.step = 3; m.added = add.length; m.dupes = fresh.length - add.length; m.latest = allMonths[allMonths.length - 1];
+  m.monthsCovered = allMonths.length > 1 ? mLabel(allMonths[0]) + ' to ' + mLabel(allMonths[allMonths.length - 1]) : allMonths.length ? mLabel(allMonths[0]) : '';
+  bump(); m.suggest = D().months.length >= 3 && !Object.keys(S.settings.budget.limits).length;
+  renderSheet(); render();
 }
 
 /* ---------- export ---------- */
@@ -686,7 +718,7 @@ document.addEventListener('click', async ev => {
       putDoc('goals'); closeSheet(); render(); break;
     }
     case 'delSaving': if (S.confirm !== 'ds' + ds.id) { S.confirm = 'ds' + ds.id; renderSheet(); break; } S.confirm = ''; S.settings.goals.savings = S.settings.goals.savings.filter(v => v.id !== ds.id); putDoc('goals'); closeSheet(); render(); break;
-    case 'flip': S.imp.flip = !S.imp.flip; S.imp.flipTouched = true; S.imp.built = C.buildTransactions(S.imp.layout.dataRows, S.imp.mapping, S.imp.flip); renderSheet(); break;
+    case 'flip': S.imp.invert = !S.imp.invert; rebuildImport(); renderSheet(); break;
     case 'runImport': runImport(); break;
     case 'importDone': { const mo = S.imp && S.imp.latest; closeSheet(); if (mo) S.month = mo; S.tab = 'overview'; pickMonth(); render(); window.scrollTo(0, 0); break; }
     case 'importAnother': startImport(); break;
@@ -707,15 +739,15 @@ document.addEventListener('change', ev => {
   if (t.id === 'catf') { S.catFilter = t.value; S.actLimit = 150; const l = $('#act-list'); if (l) l.innerHTML = actList(); }
   else if (t.id === 'extra') { S.settings.goals.extra = Math.max(0, num(t.value)); putDoc('goals'); }
   else if (t.id === 'bigtext') { S.big = t.checked; document.documentElement.classList.toggle('big', S.big); try { localStorage.setItem('hb-big', S.big ? '1' : '0'); } catch (e) {} }
-  else if (t.id === 'imp-file' && im) { loadFile(t.files && t.files[0]); }
+  else if (t.id === 'imp-file' && im) { loadFiles(t.files); }
   else if (t.id === 'rst-file') { loadBackupFile(t.files && t.files[0]); }
   else if (t.id === 'imp-acct' && im) { im.acct = t.value; renderSheet(); }
   else if (t.id === 'imp-name' && im) { im.newName = t.value; }
   else if (t.id === 'imp-type' && im) { im.newType = t.value; }
   else if (/^map-/.test(t.id) && im) {
-    const v = +t.value, mp = im.mapping;
+    const v = +t.value, mp = im.files[0] && im.files[0].mapping; if (!mp) return;
     if (t.id === 'map-date') mp.date = v; else if (t.id === 'map-desc') mp.desc = v; else if (t.id === 'map-amt') mp.amount = v; else if (t.id === 'map-deb') mp.debit = v; else if (t.id === 'map-cred') mp.credit = v;
-    im.flipTouched = false; rebuildImport(); renderSheet();
+    rebuildImport(); renderSheet();
   }
 });
 document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && S.sheet) closeSheet(); });

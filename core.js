@@ -74,10 +74,15 @@ function merchantKey(desc) {
   return words.slice(0, 2).join(' ') || 'UNKNOWN';
 }
 function cleanName(desc, key) {
-  if (/^CHECK \d+$/.test(key || '')) return 'Check ' + key.slice(6);
+  const ck = String(desc || '').match(/^\s*check\s*#?\s*(\d+)\s*$/i);
+  if (ck) return 'Check ' + ck[1];
   const n = baseDesc(desc).replace(/^BKOFAMERICA/i, 'Bank of America')
     .replace(/\*\S*\d\S*.*$/, '').replace(/\s+[#*]?[A-Za-z]?\d[\w\/-]*.*$/, '').replace(/[\s*#-]+$/, '').trim();
   return titleCase(n.length >= 3 ? n : (key || desc || 'Unknown')).replace(/\bAtm\b/g, 'ATM').replace(/\bOf\b/g, 'of').replace(/\.Com\b/g, '.com');
+}
+function keyLabel(key) {
+  const m = String(key || '').match(/^CHECK (\d+\.\d\d)$/);
+  return m ? 'Check for $' + Number(m[1]).toLocaleString('en-US', { minimumFractionDigits: 2 }) : titleCase(key);
 }
 function titleCase(s) {
   return String(s).toLowerCase().replace(/\b([a-z])([a-z']*)/g, (m, a, b) => a.toUpperCase() + b);
@@ -238,7 +243,8 @@ function enrich(items, ctx) {
   const rules = (ctx && ctx.rules) || {}, accts = (ctx && ctx.accounts) || {};
   const out = [];
   for (const t of items) {
-    const key = merchantKey(t.m);
+    let key = merchantKey(t.m);
+    if (/^CHECK \d+$/.test(key)) key = 'CHECK ' + Math.abs(t.a).toFixed(2);
     const ac = accts[t.ac];
     const cat = t.c || rules[key] || builtinCategory(t.m, t.a, ac && ac.type);
     out.push({ i: t.i, d: t.d, a: t.a, m: t.m, ac: t.ac, key: key, cat: cat, kind: kindOf(cat), month: t.d.slice(0, 7), manual: !!t.c });
@@ -295,7 +301,7 @@ function detectRecurring(E) {
     }
     const cat = list[list.length - 1].cat;
     res.push({
-      key: key, name: cleanName(list[list.length - 1].m, key), cat: cat, monthly: r2(increase ? amts[amts.length - 1] : med), annual: r2((increase ? amts[amts.length - 1] : med) * 12), count: list.length,
+      key: key, name: /^CHECK \d/.test(key) ? keyLabel(key) : cleanName(list[list.length - 1].m, key), cat: cat, monthly: r2(increase ? amts[amts.length - 1] : med), annual: r2((increase ? amts[amts.length - 1] : med) * 12), count: list.length,
       lastDate: list[list.length - 1].d, firstDate: list[0].d,
       type: (cat === 'Subscriptions' || cat === 'Entertainment') ? 'subscription' : 'bill',
       increase: increase
@@ -453,7 +459,7 @@ function makeSample(today) {
 }
 
 root.Core = {
-  EXPENSE, INCOME, TRANSFER, ALL_CATS, ESSENTIAL, DISCRETIONARY, kindOf, builtinCategory, merchantKey, baseDesc, titleCase, cleanName,
+  EXPENSE, INCOME, TRANSFER, ALL_CATS, ESSENTIAL, DISCRETIONARY, kindOf, builtinCategory, merchantKey, baseDesc, titleCase, cleanName, keyLabel,
   parseCSV, parseDate, parseAmount, detectLayout, buildTransactions, guessFlip, assignIds, hash,
   enrich, summarize, monthsOf, monthDiff, addMonths, topMerchants, detectRecurring, suggestBudget, budgetStatus, insights,
   simulatePayoff, monthsToGoal, monthlyNeeded, essentialsPerMonth, makeSample, r2
