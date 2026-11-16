@@ -3,7 +3,7 @@
 'use strict';
 
 /* ---------- Categories ---------- */
-const EXPENSE = ['Housing','Utilities','Groceries','Transportation','Insurance','Healthcare','Debt payments','Taxes','Home maintenance','Dining out','Subscriptions','Shopping','Entertainment','Travel','Personal care','Pets','Gifts & donations','Zelle & Venmo','Cash withdrawals','Fees & interest','Other'];
+const EXPENSE = ['Housing','Utilities','Groceries','Transportation','Insurance','Healthcare','Debt payments','Credit card payments','Taxes','Home maintenance','Dining out','Subscriptions','Shopping','Entertainment','Travel','Personal care','Pets','Gifts & donations','Zelle & Venmo','Cash withdrawals','Fees & interest','Other'];
 const INCOME = ['Paycheck','Social Security','Pension','Interest','Other income'];
 const TRANSFER = 'Transfers';
 const ESSENTIAL = new Set(['Housing','Utilities','Groceries','Transportation','Insurance','Healthcare','Debt payments','Taxes','Home maintenance']);
@@ -11,7 +11,11 @@ const DISCRETIONARY = new Set(['Dining out','Subscriptions','Shopping','Entertai
 const ALL_CATS = EXPENSE.concat(INCOME, [TRANSFER]);
 const kindOf = c => c === TRANSFER ? 'transfer' : INCOME.indexOf(c) >= 0 ? 'income' : 'expense';
 
-const TRANSFER_RE = /(transfer|xfer|payment.{0,3}thank you|payment to crd|keep the change|autopay|auto pay|automatic payment|credit card (pay|pmt)|crd pmt|card pmt|payment received)/i;
+const TRANSFER_RE = /(transfer|xfer|payment.{0,3}thank you|keep the change|payment received)/i;
+/* A payment from checking to a credit card. It is spending when the card's own statement is not imported,
+   and a transfer (left out) when it is, so nothing is counted twice. */
+const CARD_PAY_RE = /payment to crd|credit crd|credit card (pay|pmt)|crd pmt|card pmt|crcardpmt|card ?payment|cardmember|capital one.{0,24}(pmt|payment)|discover.{0,12}(e-?payment|pmt|payment)|chase credit|citi card|card ?services|amex e?payment|american express.{0,12}(ach|pmt|payment)|synchrony|comenity|barclaycard|wells fargo card|credit one bank/i;
+const P2P_RE = /zelle|venmo|cash ?app|apple cash/i;
 
 const EXPENSE_RULES = [
  ['Fees & interest', /overdraft|\bnsf\b|insufficient funds|service charge|service fee|monthly (service|maintenance) fee|maintenance fee|atm fee|non-?network|foreign transaction|late fee|interest charge|finance charge|annual fee|wire fee|returned item|stop payment fee|paper statement fee/i],
@@ -46,8 +50,9 @@ function matchExpense(desc) {
   for (let i = 0; i < EXPENSE_RULES.length; i++) if (EXPENSE_RULES[i][1].test(desc)) return EXPENSE_RULES[i][0];
   return null;
 }
-function builtinCategory(desc, amount, acctType) {
-  if (TRANSFER_RE.test(desc)) return TRANSFER;
+function builtinCategory(desc, amount, acctType, hasCard) {
+  if (acctType !== 'credit' && amount < 0 && CARD_PAY_RE.test(desc) && !/loan|mortgage|auto fin/i.test(desc)) return hasCard ? TRANSFER : 'Credit card payments';
+  if (TRANSFER_RE.test(desc) && !P2P_RE.test(desc)) return TRANSFER;
   if (amount > 0) {
     for (let i = 0; i < INCOME_RULES.length; i++) if (INCOME_RULES[i][1].test(desc)) return INCOME_RULES[i][0];
     const c = matchExpense(desc);
@@ -241,12 +246,13 @@ function assignIds(txns, accountId) {
 /* ---------- Enrichment & summaries ---------- */
 function enrich(items, ctx) {
   const rules = (ctx && ctx.rules) || {}, accts = (ctx && ctx.accounts) || {};
+  const hasCard = Object.keys(accts).some(k => accts[k] && accts[k].type === 'credit');
   const out = [];
   for (const t of items) {
     let key = merchantKey(t.m);
     if (/^CHECK \d+$/.test(key)) key = 'CHECK ' + Math.abs(t.a).toFixed(2);
     const ac = accts[t.ac];
-    const cat = t.c || rules[key] || builtinCategory(t.m, t.a, ac && ac.type);
+    const cat = t.c || rules[key] || builtinCategory(t.m, t.a, ac && ac.type, hasCard);
     out.push({ i: t.i, d: t.d, a: t.a, m: t.m, ac: t.ac, key: key, cat: cat, kind: kindOf(cat), month: t.d.slice(0, 7), manual: !!t.c });
   }
   out.sort((x, y) => x.d < y.d ? 1 : x.d > y.d ? -1 : (x.i < y.i ? 1 : -1));
@@ -365,6 +371,8 @@ function insights(E, month, opts) {
   const streams = rec.filter(r => STREAMING.test(r.key));
   if (streams.length >= 3) out.push({ tone: 'info', title: streams.length + ' streaming services', body: 'Rotating one service at a time is a common way to cut this cost.', tab: 'trim', action: 'Review them' });
   rec.filter(r => r.increase).slice(0, 2).forEach(r => out.push({ tone: 'warn', title: r.name + ' went up ' + opts.money(r.increase.to - r.increase.from) + ' a month', body: 'From ' + opts.money(r.increase.from) + ' to ' + opts.money(r.increase.to) + '. Worth a call to ask for a better rate, or a check that it still earns its place.', tab: 'trim', action: 'Review' }));
+  const cc = s.byCat['Credit card payments'] || 0;
+  if (cc > 0 && s.spend > 0 && cc / s.spend > 0.1) out.push({ tone: 'info', title: opts.money(cc) + ' paid to credit cards', body: 'This shows what was paid to the card, not what was bought with it. Importing the card\u2019s own statement shows where that money went.' });
   const other = s.byCat['Other'] || 0;
   if (s.spend > 0 && other / s.spend > 0.15) out.push({ tone: 'info', title: 'Some spending is uncategorized', body: opts.money(other) + ' is in Other. Sorting it makes every chart more accurate.', tab: 'activity', cat: 'Other', action: 'Sort them' });
   return out;

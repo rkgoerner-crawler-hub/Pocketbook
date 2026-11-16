@@ -36,7 +36,7 @@ const I = {
   t_trim: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6.5" r="2.5"/><circle cx="6" cy="17.5" r="2.5"/><path d="M8 8l12 9M8 16L20 7"/></svg>',
   t_goals: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>'
 };
-const GROUP_LABEL = { 'g-ess': 'Essentials', 'g-day': 'Everyday', 'g-oth': 'Cash and fees' };
+const GROUP_LABEL = { 'g-ess': 'Essentials', 'g-day': 'Everyday', 'g-oth': 'Cards, cash and fees' };
 function grp(cat) { if (C.ESSENTIAL.has(cat)) return 'g-ess'; if (C.INCOME.indexOf(cat) >= 0) return 'g-inc'; if (cat === C.TRANSFER) return 'g-xfer'; if (C.DISCRETIONARY.has(cat) || cat === 'Pets' || cat === 'Gifts & donations') return 'g-day'; return 'g-oth'; }
 const tile = cat => '<span class="tile ' + grp(cat) + '" aria-hidden="true">' + esc(String(cat).charAt(0)) + '</span>';
 const TABS = [['overview', 'Overview'], ['activity', 'Activity'], ['budget', 'Budget'], ['trim', 'Cut costs'], ['goals', 'Goals']];
@@ -208,7 +208,7 @@ function viewOverview() {
   const catH = '<section><div class="sec-head"><h2 class="sec">Where the money went</h2></div><div class="card"><div class="bars">' +
     splitBar(s) + (shown.map(c => '<button class="bar-row" data-a="goCat" data-cat="' + esc(c) + '">' + tile(c) + '<div class="bar-main"><div class="bar-top"><span class="name">' + esc(c) + '</span><span class="val num">' + esc(money(s.byCat[c])) + '<span class="pct">' + Math.round(s.byCat[c] / s.spend * 100) + '%</span></span></div><div class="track"><div class="fill ' + grp(c) + '" style="width:' + Math.max(1, s.byCat[c] / max * 100).toFixed(1) + '%"></div></div></div></button>').join('') || '<p class="hint">No spending recorded in this month.</p>') +
     '</div>' + (cats.length > 8 ? '<button class="link" data-a="toggleCats">' + (S.showAll ? 'Show fewer' : 'Show all ' + cats.length + ' categories') + '</button>' : '') + '</div>' +
-    '<p class="small">Transfers between your own accounts and card payments are left out so nothing is counted twice.</p></section>';
+    '<p class="small">' + (Object.keys(d.accts).some(k => d.accts[k].type === 'credit') ? 'Transfers between accounts and credit card payments are left out, because the card\u2019s own purchases are counted instead. Nothing is counted twice.' : 'Transfers between accounts are left out. Credit card payments from checking count as spending, since no card statement has been imported.') + '</p></section>';
   const tm = C.topMerchants(d.E, m, 5);
   const merH = tm.length ? '<section><h2 class="sec">Biggest places</h2><div class="card"><div class="list">' + tm.map(x => '<div class="row-item" style="cursor:default"><div class="l"><span class="t1">' + esc(x.name) + '</span><span class="t2">' + x.count + (x.count === 1 ? ' purchase' : ' purchases') + ' · ' + esc(x.cat) + '</span></div><div class="r num">' + esc(money(x.spend)) + '</div></div>').join('') + '</div></div></section>' : '';
   return hero + insH + catH + trendSection() + merH;
